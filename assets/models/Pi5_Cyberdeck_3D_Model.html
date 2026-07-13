@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pi 5 Cyberdeck — 3D model</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #14181d; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #canvas-wrap { position: relative; width: 100%; height: 100vh; }
+  canvas { display: block; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hint {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    color: #8fa3b3; font-size: 12px; letter-spacing: 0.02em;
+    background: rgba(20,24,29,0.6); padding: 6px 14px; border-radius: 999px;
+    border: 0.5px solid rgba(255,255,255,0.12); pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  #legend {
+    position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 6px;
+    font-size: 12px; color: #cfd8df;
+  }
+  #legend .row { display: flex; align-items: center; gap: 8px; }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  #title {
+    position: absolute; top: 16px; right: 16px; text-align: right;
+    color: #6d8091; font-size: 11px; letter-spacing: 0.04em; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-wrap">
+  <div id="legend">
+    <div class="row"><span class="swatch" style="background:#3a4753"></span>Apache 2800 case</div>
+    <div class="row"><span class="swatch" style="background:#1d9e75"></span>Display, lid</div>
+    <div class="row"><span class="swatch" style="background:#7f77dd"></span>Keyboard, base</div>
+    <div class="row"><span class="swatch" style="background:#d85a30"></span>Compute stack</div>
+  </div>
+  <div id="title">V2 LOCKED SPEC<br>drag to rotate</div>
+  <div id="hint">Drag to rotate &middot; release to auto-spin</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14181d);
+scene.fog = new THREE.Fog(0x14181d, 14, 30);
+
+const camera = new THREE.PerspectiveCamera(38, wrap.clientWidth / wrap.clientHeight, 0.1, 100);
+camera.position.set(6.5, 5.2, 7.5);
+camera.lookAt(0, 0.6, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+renderer.shadowMap.enabled = true;
+wrap.appendChild(renderer.domElement);
+
+// -- lighting --
+scene.add(new THREE.AmbientLight(0x8fa3b3, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 1.1);
+key.position.set(5, 8, 4);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x4a6fa5, 0.35);
+fill.position.set(-6, 3, -4);
+scene.add(fill);
+
+// -- blueprint-grid floor --
+const floorGeo = new THREE.PlaneGeometry(40, 40);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x181d23, roughness: 1 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.02;
+floor.receiveShadow = true;
+scene.add(floor);
+const grid = new THREE.GridHelper(40, 80, 0x25506b, 0x1b2530);
+grid.position.y = -0.01;
+scene.add(grid);
+
+// -- materials (colors match the schematic diagram) --
+const caseMat  = new THREE.MeshStandardMaterial({ color: 0x3a4753, roughness: 0.75, metalness: 0.1 });
+const caseInMat= new THREE.MeshStandardMaterial({ color: 0x232b32, roughness: 0.85 });
+const latchMat = new THREE.MeshStandardMaterial({ color: 0xd8901f, roughness: 0.5, metalness: 0.3 });
+const bezelMat = new THREE.MeshStandardMaterial({ color: 0x1b2126, roughness: 0.6 });
+const screenMat= new THREE.MeshStandardMaterial({ color: 0x0d3d33, roughness: 0.3, emissive: 0x0e6a52, emissiveIntensity: 0.35 });
+const keyMat   = new THREE.MeshStandardMaterial({ color: 0x2c2f3a, roughness: 0.7 });
+const keyCapMat= new THREE.MeshStandardMaterial({ color: 0x3f3f52, roughness: 0.55 });
+const pcbMat   = new THREE.MeshStandardMaterial({ color: 0x1d5c3f, roughness: 0.6 });
+const hatMat   = new THREE.MeshStandardMaterial({ color: 0x1f6b48, roughness: 0.6 });
+const coolerMat= new THREE.MeshStandardMaterial({ color: 0xb9c2c9, roughness: 0.3, metalness: 0.6 });
+const fanHubMat= new THREE.MeshStandardMaterial({ color: 0x30343b, roughness: 0.4, metalness: 0.4 });
+
+// -- root rig (rotated by drag) --
+const rig = new THREE.Group();
+scene.add(rig);
+
+// -- base shell --
+const baseW = 4.6, baseD = 3.2, baseH = 0.42;
+const base = new THREE.Mesh(new THREE.BoxGeometry(baseW, baseH, baseD), caseMat);
+base.position.set(0, baseH / 2, 0);
+base.castShadow = true; base.receiveShadow = true;
+rig.add(base);
+
+// base interior recess
+const baseInterior = new THREE.Mesh(new THREE.BoxGeometry(baseW - 0.3, 0.06, baseD - 0.3), caseInMat);
+baseInterior.position.set(0, baseH - 0.03, 0);
+rig.add(baseInterior);
+
+// front latches (Chapter 4.1: side latches)
+[-1.7, 1.7].forEach((x) => {
+  const latch = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.1), latchMat);
+  latch.position.set(x, baseH * 0.55, baseD / 2 + 0.03);
+  rig.add(latch);
+});
+
+// -- keyboard block (60% footprint, front of base) --
+const kbGroup = new THREE.Group();
+kbGroup.position.set(-0.55, baseH + 0.02, 0.55);
+rig.add(kbGroup);
+const kbBody = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.08, 1.5), keyMat);
+kbBody.position.y = 0.04;
+kbBody.castShadow = true;
+kbGroup.add(kbBody);
+// simple key grid (representative, not exact layout)
+const keyGeo = new THREE.BoxGeometry(0.16, 0.05, 0.16);
+for (let r = 0; r < 5; r++) {
+  for (let c = 0; c < 12; c++) {
+    const key = new THREE.Mesh(keyGeo, keyCapMat);
+    key.position.set(-1.0 + c * 0.185, 0.11, -0.6 + r * 0.29);
+    key.castShadow = true;
+    kbGroup.add(key);
+  }
+}
+
+// -- compute stack (rear of base: Pi 5 + HAT+ + Active Cooler) --
+const stackGroup = new THREE.Group();
+stackGroup.position.set(1.35, baseH + 0.02, -0.55);
+rig.add(stackGroup);
+const piBoard = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.85), pcbMat);
+piBoard.position.y = 0.03;
+piBoard.castShadow = true;
+stackGroup.add(piBoard);
+const hatBoard = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.7), hatMat);
+hatBoard.position.y = 0.12;
+hatBoard.castShadow = true;
+stackGroup.add(hatBoard);
+const coolerBody = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.16, 24), coolerMat);
+coolerBody.position.y = 0.24;
+coolerBody.castShadow = true;
+stackGroup.add(coolerBody);
+const fanHub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.19, 16), fanHubMat);
+fanHub.position.y = 0.24;
+stackGroup.add(fanHub);
+
+// -- lid, hinged at the rear edge of the base --
+const hinge = new THREE.Group();
+hinge.position.set(0, baseH, -baseD / 2);
+rig.add(hinge);
+
+const lidW = baseW, lidD = baseD, lidH = 0.3;
+const lid = new THREE.Mesh(new THREE.BoxGeometry(lidW, lidH, lidD), caseMat);
+lid.position.set(0, lidH / 2, lidD / 2);
+lid.castShadow = true;
+const lidPivot = new THREE.Group();
+lidPivot.add(lid);
+hinge.add(lidPivot);
+lidPivot.rotation.x = -1.95; // ~112 degrees open
+
+// display + bezel on the lid's interior face (the face that meets the keyboard when closed)
+const bezel = new THREE.Mesh(new THREE.BoxGeometry(lidW - 0.25, 0.03, lidD - 0.3), bezelMat);
+bezel.position.set(0, 0.018, lidD / 2 - 0.02);
+lidPivot.add(bezel);
+const screen = new THREE.Mesh(new THREE.BoxGeometry(lidW - 0.55, 0.01, lidD - 0.6), screenMat);
+screen.position.set(0, 0.03, lidD / 2 - 0.02);
+lidPivot.add(screen);
+
+// -- interaction: manual drag-to-rotate (OrbitControls unavailable) --
+let isDragging = false, prevX = 0, prevY = 0;
+let rigRotY = 0.5, rigRotX = 0.18;
+let autoSpin = true;
+const hint = document.getElementById('hint');
+
+function onDown(x, y) {
+  isDragging = true; autoSpin = false;
+  prevX = x; prevY = y;
+  hint.style.opacity = '0';
+}
+function onMove(x, y) {
+  if (!isDragging) return;
+  const dx = x - prevX, dy = y - prevY;
+  rigRotY += dx * 0.008;
+  rigRotX = Math.max(-0.3, Math.min(0.9, rigRotX + dy * 0.006));
+  prevX = x; prevY = y;
+}
+function onUp() {
+  isDragging = false;
+  setTimeout(() => { autoSpin = true; hint.style.opacity = '1'; }, 2500);
+}
+
+renderer.domElement.addEventListener('mousedown', (e) => onDown(e.clientX, e.clientY));
+window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+window.addEventListener('mouseup', onUp);
+renderer.domElement.addEventListener('touchstart', (e) => onDown(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+window.addEventListener('touchmove', (e) => onMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+window.addEventListener('touchend', onUp);
+
+function resize() {
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+}
+window.addEventListener('resize', resize);
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (autoSpin) rigRotY += 0.0022;
+  camera.position.set(
+    Math.sin(rigRotY) * 8.2 * Math.cos(rigRotX),
+    3.6 + rigRotX * 4.5,
+    Math.cos(rigRotY) * 8.2 * Math.cos(rigRotX)
+  );
+  camera.lookAt(0, 0.7, 0);
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
