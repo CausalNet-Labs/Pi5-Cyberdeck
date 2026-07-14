@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pi 5 Cyberdeck — Compute Stack 3D</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #14181d; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #canvas-wrap { position: relative; width: 100%; height: 100vh; }
+  canvas { display: block; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hint {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    color: #8fa3b3; font-size: 12px; letter-spacing: 0.02em;
+    background: rgba(20,24,29,0.6); padding: 6px 14px; border-radius: 999px;
+    border: 0.5px solid rgba(255,255,255,0.12); pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  #legend {
+    position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 6px;
+    font-size: 12px; color: #cfd8df;
+  }
+  #legend .row { display: flex; align-items: center; gap: 8px; }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  #title {
+    position: absolute; top: 16px; right: 16px; text-align: right;
+    color: #6d8091; font-size: 11px; letter-spacing: 0.04em; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-wrap">
+  <div id="legend">
+    <div class="row"><span class="swatch" style="background:#9c9686"></span>Standoffs</div>
+    <div class="row"><span class="swatch" style="background:#c9552f"></span>Raspberry Pi 5</div>
+    <div class="row"><span class="swatch" style="background:#1f8f6a"></span>M.2 HAT+ / NVMe</div>
+    <div class="row"><span class="swatch" style="background:#b9c2c9"></span>Active Cooler</div>
+  </div>
+  <div id="title">COMPUTE STACK ONLY<br>drag to rotate</div>
+  <div id="hint">Drag to rotate &middot; release to auto-spin</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14181d);
+scene.fog = new THREE.Fog(0x14181d, 6, 16);
+
+const camera = new THREE.PerspectiveCamera(35, wrap.clientWidth / wrap.clientHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+renderer.shadowMap.enabled = true;
+wrap.appendChild(renderer.domElement);
+
+// -- lighting --
+scene.add(new THREE.AmbientLight(0x8fa3b3, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 1.15);
+key.position.set(3, 5, 3);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x4a6fa5, 0.35);
+fill.position.set(-3, 2, -2);
+scene.add(fill);
+
+// -- floor --
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(20, 20),
+  new THREE.MeshStandardMaterial({ color: 0x181d23, roughness: 1 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+const grid = new THREE.GridHelper(20, 40, 0x25506b, 0x1b2530);
+grid.position.y = 0.001;
+scene.add(grid);
+
+// -- materials (match the exploded-stack schematic colors) --
+const standoffMat = new THREE.MeshStandardMaterial({ color: 0x9c9686, roughness: 0.6, metalness: 0.2 });
+const piMat       = new THREE.MeshStandardMaterial({ color: 0xc9552f, roughness: 0.55 });
+const hatMat      = new THREE.MeshStandardMaterial({ color: 0x1f8f6a, roughness: 0.55 });
+const ssdMat      = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.4 });
+const coolerMat   = new THREE.MeshStandardMaterial({ color: 0xb9c2c9, roughness: 0.3, metalness: 0.6 });
+const fanHubMat   = new THREE.MeshStandardMaterial({ color: 0x30343b, roughness: 0.4, metalness: 0.4 });
+
+const rig = new THREE.Group();
+scene.add(rig);
+
+// -- standoffs into the case floor --
+const standoffH = 0.34;
+const standoffPositions = [[-0.42, -0.32], [0.42, -0.32], [-0.42, 0.32], [0.42, 0.32]];
+standoffPositions.forEach(([x, z]) => {
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, standoffH, 12), standoffMat);
+  s.position.set(x, standoffH / 2, z);
+  s.castShadow = true;
+  rig.add(s);
+});
+
+// -- Raspberry Pi 5 board --
+const piBoard = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.85), piMat);
+piBoard.position.set(0, standoffH + 0.03, 0);
+piBoard.castShadow = true;
+rig.add(piBoard);
+
+// -- small secondary standoffs: Pi board up to HAT+ --
+const hatStandoffH = 0.14;
+const hatStandoffPositions = [[-0.35, -0.25], [0.35, -0.25], [-0.35, 0.25], [0.35, 0.25]];
+const hatBaseY = standoffH + 0.06;
+hatStandoffPositions.forEach(([x, z]) => {
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, hatStandoffH, 10), standoffMat);
+  s.position.set(x, hatBaseY + hatStandoffH / 2, z);
+  s.castShadow = true;
+  rig.add(s);
+});
+
+// -- M.2 HAT+ board, with a small NVMe SSD block seated on it --
+const hatY = hatBaseY + hatStandoffH + 0.025;
+const hatBoard = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.7), hatMat);
+hatBoard.position.set(0, hatY, 0);
+hatBoard.castShadow = true;
+rig.add(hatBoard);
+const ssd = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.025, 0.11), ssdMat);
+ssd.position.set(0.15, hatY + 0.038, 0.15);
+ssd.castShadow = true;
+rig.add(ssd);
+
+// -- Active Cooler, clipped to the Pi's own mounting holes, sitting on top --
+const coolerY = hatY + 0.14;
+const coolerBody = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.16, 28), coolerMat);
+coolerBody.position.set(0, coolerY, 0);
+coolerBody.castShadow = true;
+rig.add(coolerBody);
+const fanHub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.19, 16), fanHubMat);
+fanHub.position.set(0, coolerY, 0);
+rig.add(fanHub);
+// four short legs from the cooler down past the HAT+ to the Pi board's own holes
+const legPositions = [[-0.42, -0.32], [0.42, -0.32], [-0.42, 0.32], [0.42, 0.32]];
+const legH = coolerY - (standoffH + 0.06);
+legPositions.forEach(([x, z]) => {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, legH, 8), standoffMat);
+  leg.position.set(x, standoffH + 0.06 + legH / 2, z);
+  rig.add(leg);
+});
+
+// -- camera framing (close on the stack) --
+let rigRotY = 0.7, rigRotX = 0.22;
+const radius = 2.6;
+function updateCamera() {
+  camera.position.set(
+    Math.sin(rigRotY) * radius * Math.cos(rigRotX),
+    0.55 + rigRotX * 2.2,
+    Math.cos(rigRotY) * radius * Math.cos(rigRotX)
+  );
+  camera.lookAt(0, 0.45, 0);
+}
+updateCamera();
+
+// -- interaction: manual drag-to-rotate --
+let isDragging = false, prevX = 0, prevY = 0, autoSpin = true;
+const hint = document.getElementById('hint');
+function onDown(x, y) { isDragging = true; autoSpin = false; prevX = x; prevY = y; hint.style.opacity = '0'; }
+function onMove(x, y) {
+  if (!isDragging) return;
+  const dx = x - prevX, dy = y - prevY;
+  rigRotY += dx * 0.008;
+  rigRotX = Math.max(-0.2, Math.min(0.85, rigRotX + dy * 0.006));
+  prevX = x; prevY = y;
+}
+function onUp() { isDragging = false; setTimeout(() => { autoSpin = true; hint.style.opacity = '1'; }, 2500); }
+
+renderer.domElement.addEventListener('mousedown', (e) => onDown(e.clientX, e.clientY));
+window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+window.addEventListener('mouseup', onUp);
+renderer.domElement.addEventListener('touchstart', (e) => onDown(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+window.addEventListener('touchmove', (e) => onMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+window.addEventListener('touchend', onUp);
+
+function resize() {
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+}
+window.addEventListener('resize', resize);
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (autoSpin) rigRotY += 0.0026;
+  updateCamera();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
